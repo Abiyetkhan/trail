@@ -1,7 +1,7 @@
 {
   "name": "telegram-bot",
   "version": "1.0.0",
-  "main": "pp.js",
+  "main": "ppp.js",
   "dependencies": {
     "telegraf": "^4.12.2",
     "fs": "0.0.1-security",
@@ -9,6 +9,6 @@
     "node-fetch": "^3.3.2"
   },
   "scripts": {
-    "start": "node pp.js"
+    "start": "node ppp.js"
   }
 }
