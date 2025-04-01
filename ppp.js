@@ -5,134 +5,172 @@ const request = require('request');
 // Replace with your actual Telegram bot token
 const token = '7951430892:AAEYIQBazB2smsBwTvFjc-K82oAP7JBKwbI';
 
-// Create a bot instance
 const bot = new TelegramBot(token, { polling: true });
 
-let userState = {}; // To store the user progress
+const adminId = 7689032393;
+let userState = {}; // To store user progress
+let premiumUsers = {}; // Store user subscription details
+let redeemCodes = {}; // Store generated redeem codes
 
+// Save and load data
+const saveData = () => fs.writeFileSync('subscriptions.json', JSON.stringify(premiumUsers, null, 2));
+const loadData = () => {
+    if (fs.existsSync('subscriptions.json')) {
+        premiumUsers = JSON.parse(fs.readFileSync('subscriptions.json'));
+    }
+};
+
+// Load existing subscription data on startup
+loadData();
+
+// Admin panel access
+bot.onText(/\/abiyet/, (msg) => {
+    if (msg.chat.id !== adminId) return;
+    bot.sendMessage(adminId, "🛠 Admin Panel\n\nCommands:\n/generatecode <days> - Create a premium code\n/subscribers - View active users");
+});
+
+// Generate redeem codes
+bot.onText(/\/generatecode (\d+)/, (msg, match) => {
+    if (msg.chat.id !== adminId) return;
+    const days = parseInt(match[1]);
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+    redeemCodes[code] = { days, used: false };
+    bot.sendMessage(adminId, `✅ Generated Code: ${code}\nValid for: ${days} days`);
+});
+
+// View active subscriptions
+bot.onText(/\/subscribers/, (msg) => {
+    if (msg.chat.id !== adminId) return;
+    let response = "📋 Active Subscribers:\n";
+    for (const [userId, details] of Object.entries(premiumUsers)) {
+        response += `👤 ${userId} - Expires: ${new Date(details.expires).toLocaleString()}\n`;
+    }
+    bot.sendMessage(adminId, response || "No active subscribers.");
+});
+
+// User redeeming a code
+bot.onText(/\/redeem (\w+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const code = match[1];
+
+    if (!redeemCodes[code]) {
+        bot.sendMessage(chatId, "❌ Invalid code.");
+        return;
+    }
+    if (redeemCodes[code].used) {
+        bot.sendMessage(chatId, "⚠️ Code already used.");
+        return;
+    }
+
+    const days = redeemCodes[code].days;
+    const expires = Date.now() + days * 24 * 60 * 60 * 1000;
+    premiumUsers[chatId] = { expires };
+    redeemCodes[code].used = true;
+    
+    saveData();
+    bot.sendMessage(chatId, `🎉 You are now premium for ${days} days!`);
+});
+
+// Check if user is premium
+const isPremium = (chatId) => premiumUsers[chatId] && premiumUsers[chatId].expires > Date.now();
+
+// Start bot
 bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, 'Welcome! Please send me a .txt file to convert.');
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, "🚀 Introducing the Ultimate TXT to VCF Converter Bot! 📂➡️📇\n\n✅ Convert .txt files into .vcf contacts instantly!\n✅ Customize file names and contact details with ease!\n✅ Premium Subscription Plans Available\n🔹 3 Days – $3\n🔹 5 Days – $6\n🔹 14 Days – $12\n✅ Redeem Code System – Get premium access with special codes!\n✅ Join @VCFUPDATESS to Access the Bot!\n\n🎯 How to Start?\n1️⃣ Join this channel (@VCFUPDATESS)\n2️⃣ Start the bot\n3️⃣ Convert your TXT files effortlessly!");
 });
 
-// Handling document uploads
+// File conversion process (only for premium users)
 bot.on('document', (msg) => {
-  const chatId = msg.chat.id;
-  const fileId = msg.document.file_id;
-  const fileName = msg.document.file_name;
+    const chatId = msg.chat.id;
 
-  // Ensure the uploaded file is a .txt file
-  if (!fileName.endsWith('.txt')) {
-    bot.sendMessage(chatId, "Please upload a valid .txt file.");
-    return;
-  }
+    if (!isPremium(chatId)) {
+        bot.sendMessage(chatId, "🔒 You need a premium subscription to use this feature. Use /redeem <code>.");
+        return;
+    }
 
-  // Initialize user state
-  if (!userState[chatId]) {
-    userState[chatId] = { step: 1, fileId: fileId, fileName: fileName, fileData: null };
-  } else {
-    userState[chatId].fileId = fileId;
-    userState[chatId].fileName = fileName;
-  }
+    const fileId = msg.document.file_id;
+    const fileName = msg.document.file_name;
 
-  // Start asking questions
-  bot.sendMessage(chatId, "Please provide the initial file name (e.g., file 1).");
-  userState[chatId].step = 2;
+    if (!fileName.endsWith('.txt')) {
+        bot.sendMessage(chatId, "⚠️ Please upload a valid .txt file.");
+        return;
+    }
+
+    userState[chatId] = { step: 1, fileId, fileName };
+    bot.sendMessage(chatId, "📂 Please provide the initial file name (e.g., file 1).");
+    userState[chatId].step = 2;
 });
 
-// Handling user responses
+// Handle file processing (same logic as your original)
 bot.on('message', (msg) => {
-  const chatId = msg.chat.id;
+    const chatId = msg.chat.id;
 
-  if (!userState[chatId]) return; // Ignore if user is not in progress
+    if (!userState[chatId]) return;
+    const user = userState[chatId];
 
-  const user = userState[chatId];
+    switch (user.step) {
+        case 2:
+            user.fileName = msg.text;
+            bot.sendMessage(chatId, "📁 How many .vcf files should I create?");
+            user.step = 3;
+            break;
 
-  switch (user.step) {
-    case 2: // Ask for initial file name
-      user.fileName = msg.text;
-      bot.sendMessage(chatId, "How many .vcf files should I create?");
-      user.step = 3;
-      break;
-
-    case 3: // Ask for number of files
-      const numFiles = parseInt(msg.text);
-      if (isNaN(numFiles) || numFiles <= 0) {
-        bot.sendMessage(chatId, "Please provide a valid number of files.");
-        return;
-      }
-      user.numFiles = numFiles;
-      bot.sendMessage(chatId, "How many numbers should be in each .vcf file?");
-      user.step = 4;
-      break;
-
-    case 4: // Ask for numbers per file
-      const numbersPerFile = parseInt(msg.text);
-      if (isNaN(numbersPerFile) || numbersPerFile <= 0) {
-        bot.sendMessage(chatId, "Please provide a valid number of contacts per file.");
-        return;
-      }
-      user.numbersPerFile = numbersPerFile;
-      bot.sendMessage(chatId, "Please provide the contact name prefix (e.g., contact 1).");
-      user.step = 5;
-      break;
-
-    case 5: // Ask for contact name prefix
-      user.contactPrefix = msg.text;
-      bot.sendMessage(chatId, "I am processing the file now. Please wait...");
-
-      // Proceed to download and process the .txt file
-      bot.getFileLink(user.fileId).then((fileLink) => {
-        const fileStream = fs.createWriteStream('temp.txt');
-        request(fileLink).pipe(fileStream);
-
-        fileStream.on('finish', () => {
-          fs.readFile('temp.txt', 'utf8', (err, data) => {
-            if (err) {
-              bot.sendMessage(chatId, "Sorry, something went wrong with the file.");
-              return;
+        case 3:
+            const numFiles = parseInt(msg.text);
+            if (isNaN(numFiles) || numFiles <= 0) {
+                bot.sendMessage(chatId, "⚠️ Please enter a valid number.");
+                return;
             }
+            user.numFiles = numFiles;
+            bot.sendMessage(chatId, "📇 How many numbers should be in each file?");
+            user.step = 4;
+            break;
 
-            const lines = data.split('\n');
-            let contactIndex = 1;
-
-            // Loop through the number of files to create
-            for (let i = 0; i < user.numFiles; i++) {
-              let vcfContent = '';
-              for (let j = 0; j < user.numbersPerFile && contactIndex <= lines.length; j++) {
-                const contact = lines[contactIndex - 1].trim();
-                if (contact) {
-                  vcfContent += `BEGIN:VCARD\nVERSION:3.0\nFN:${user.contactPrefix} ${contactIndex}\nTEL:${contact}\nEND:VCARD\n`;
-                }
-                contactIndex++;
-              }
-
-              // Save each .vcf file with the incremented file name (e.g., "file 1.vcf", "file 2.vcf")
-              fs.writeFile(`${user.fileName} ${i + 1}.vcf`, vcfContent, (err) => {
-                if (err) {
-                  bot.sendMessage(chatId, "Sorry, I couldn't save the VCF file.");
-                  return;
-                }
-
-                // Send the .vcf file to the user
-                bot.sendDocument(chatId, `${user.fileName} ${i + 1}.vcf`);
-              });
+        case 4:
+            const numbersPerFile = parseInt(msg.text);
+            if (isNaN(numbersPerFile) || numbersPerFile <= 0) {
+                bot.sendMessage(chatId, "⚠️ Please enter a valid number.");
+                return;
             }
+            user.numbersPerFile = numbersPerFile;
+            bot.sendMessage(chatId, "📛 Please provide the contact name prefix (e.g., Contact 1).");
+            user.step = 5;
+            break;
 
-            // Reset the user state after processing
-            userState[chatId] = null;
-          });
-        });
-      }).catch((error) => {
-        console.log('Error fetching file:', error);
-        bot.sendMessage(chatId, "Sorry, I couldn't retrieve the file.");
-      });
-      break;
+        case 5:
+            user.contactPrefix = msg.text;
+            bot.sendMessage(chatId, "⏳ Processing file...");
 
-    default:
-      // In case of unexpected behavior, restart the process
-      bot.sendMessage(chatId, "Something went wrong. Please start over by typing /start.");
-      userState[chatId] = null;
-      break;
-  }
+            bot.getFileLink(user.fileId).then((fileLink) => {
+                const fileStream = fs.createWriteStream('temp.txt');
+                request(fileLink).pipe(fileStream);
+
+                fileStream.on('finish', () => {
+                    fs.readFile('temp.txt', 'utf8', (err, data) => {
+                        if (err) return bot.sendMessage(chatId, "❌ Error reading file.");
+                        
+                        const lines = data.split('\n');
+                        let contactIndex = 1;
+
+                        for (let i = 0; i < user.numFiles; i++) {
+                            let vcfContent = '';
+                            for (let j = 0; j < user.numbersPerFile && contactIndex <= lines.length; j++) {
+                                const contact = lines[contactIndex - 1].trim();
+                                if (contact) {
+                                    vcfContent += `BEGIN:VCARD\nVERSION:3.0\nFN:${user.contactPrefix} ${contactIndex}\nTEL:${contact}\nEND:VCARD\n`;
+                                }
+                                contactIndex++;
+                            }
+
+                            fs.writeFile(`${user.fileName} ${i + 1}.vcf`, vcfContent, (err) => {
+                                if (!err) bot.sendDocument(chatId, `${user.fileName} ${i + 1}.vcf`);
+                            });
+                        }
+                        userState[chatId] = null;
+                    });
+                });
+            });
+            break;
+    }
 });
