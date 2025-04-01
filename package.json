@@ -2,11 +2,12 @@
   "name": "telegram-bot",
   "version": "1.0.0",
   "main": "ppp.js",
-  "dependencies": {
-    "telegraf": "^4.0.0",
-    "axios": "^0.27.2"
-  },
   "scripts": {
     "start": "node ppp.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.52.0",
+    "dropbox": "^10.0.1"
   }
 }
+
