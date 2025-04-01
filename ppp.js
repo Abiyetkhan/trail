@@ -26,7 +26,7 @@ loadData();
 // Admin panel access
 bot.onText(/\/abiyet/, (msg) => {
     if (msg.chat.id !== adminId) return;
-    bot.sendMessage(adminId, "🛠 Admin Panel\n\nCommands:\n/generatecode <days> - Create a premium code\n/subscribers - View active users");
+    bot.sendMessage(adminId, "🛠 Admin Panel\n\nCommands:\n/generatecode <days> - Create a premium code\n/subscribers - View active users\n/resetuser <userId> - Reset user subscription");
 });
 
 // Generate redeem codes
@@ -46,6 +46,19 @@ bot.onText(/\/subscribers/, (msg) => {
         response += `👤 ${userId} - Expires: ${new Date(details.expires).toLocaleString()}\n`;
     }
     bot.sendMessage(adminId, response || "No active subscribers.");
+});
+
+// Reset user subscription (admin function)
+bot.onText(/\/resetuser (\d+)/, (msg, match) => {
+    if (msg.chat.id !== adminId) return;
+    const userId = match[1];
+    if (premiumUsers[userId]) {
+        delete premiumUsers[userId];
+        saveData();
+        bot.sendMessage(adminId, `✅ User ${userId}'s subscription has been reset.`);
+    } else {
+        bot.sendMessage(adminId, `❌ User ${userId} does not have an active subscription.`);
+    }
 });
 
 // User redeeming a code
@@ -77,7 +90,12 @@ const isPremium = (chatId) => premiumUsers[chatId] && premiumUsers[chatId].expir
 // Start bot
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "🚀 Introducing the Ultimate TXT to VCF Converter Bot! 📂➡️📇\n\n✅ Convert .txt files into .vcf contacts instantly!\n✅ Customize file names and contact details with ease!\n✅ Premium Subscription Plans Available\n🔹 3 Days – $3\n🔹 5 Days – $6\n🔹 14 Days – $12\n✅ Redeem Code System – Get premium access with special codes!\n✅ Join @VCFUPDATESS to Access the Bot!\n\n🎯 How to Start?\n1️⃣ Join this channel (@VCFUPDATESS)\n2️⃣ Start the bot\n3️⃣ Convert your TXT files effortlessly!");
+
+    if (isPremium(chatId)) {
+        bot.sendMessage(chatId, "📂 Convert your TXT files effortlessly into VCF format!");
+    } else {
+        bot.sendMessage(chatId, "🚀 Introducing the Ultimate TXT to VCF Converter Bot! 📂➡️📇\n\n✅ Convert .txt files into .vcf contacts instantly!\n✅ Customize file names and contact details with ease!\n✅ Premium Subscription Plans Available\n🔹 3 Days – $3\n🔹 5 Days – $6\n🔹 14 Days – $12\n✅ Redeem Code System – Get premium access with special codes!\n✅ Join @VCFUPDATESS to Access the Bot!\n\n🎯 How to Start?\n1️⃣ Join this channel (@VCFUPDATESS)\n2️⃣ Start the bot\n3️⃣ Convert your TXT files effortlessly!");
+    }
 });
 
 // File conversion process (only for premium users)
